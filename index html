@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Second-Hand Market</title>
+<style>
+body { font-family: Arial, sans-serif; margin:20px; background:#f8f8f8; }
+h1,h2,h3,h4 { text-align:center; }
+#auth, #productForm, #filter, #sellerDashboard { margin-bottom:20px; padding:20px; background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); max-width:500px; margin-left:auto; margin-right:auto; }
+input, textarea, select { width:100%; padding:10px; margin:5px 0; border-radius:4px; border:1px solid #ccc; }
+button { padding:10px 20px; margin:5px 0; cursor:pointer; border:none; border-radius:4px; background:#007bff; color:#fff; }
+button:hover { background:#0056b3; }
+.product, .sellerProduct { border:1px solid #ccc; padding:10px; border-radius:8px; background:#fff; margin:10px auto; max-width:600px; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
+.product img, .sellerProduct img { max-width:100%; border-radius:4px; }
+.contactBtn { background:#28a745; }
+.contactBtn:hover { background:#1e7e34; }
+.editBtn { background:#ffc107; color:#000; }
+.editBtn:hover { background:#e0a800; }
+.deleteBtn { background:#dc3545; }
+.deleteBtn:hover { background:#a71d2a; }
+#imagePreview { max-width:100%; display:block; margin:10px auto; border-radius:4px; }
+</style>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
+
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyDzwHO53Ll5qahey04o2hkMMLEGNFKfTNA",
+  authDomain: "secondhandmarket-790ee.firebaseapp.com",
+  projectId: "secondhandmarket-790ee",
+  storageBucket: "secondhandmarket-790ee.firebasestorage.app",
+  messagingSenderId: "928831908033",
+  appId: "1:928831908033:web:abafb434dc32a1c7df8c40",
+  measurementId: "G-Z5KD5VBT1Z"
+};
+
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const auth = getAuth();
+const db = getFirestore();
+const storage = getStorage();
+
+// Auth
+window.signup = () => {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  createUserWithEmailAndPassword(auth,email,password).then(()=>alert("Signup successful!")).catch(err=>alert(err.message));
+};
+window.login = () => {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  signInWithEmailAndPassword(auth,email,password).then(()=>alert("Login successful!")).catch(err=>alert(err.message));
+};
+window.logout = () => { signOut(auth).then(()=>alert("Logged out")); };
+
+// Show/hide forms based on auth
+onAuthStateChanged(auth,user=>{
+  document.getElementById("productForm").style.display = user ? "block" : "none";
+  document.getElementById("sellerDashboard").style.display = user ? "block" : "none";
+});
+
+// Image preview
+window.previewImage = () => {
+  const file=document.getElementById("image").files[0];
+  const preview=document.getElementById("imagePreview");
+  if(file){ const reader=new FileReader(); reader.onload=e=>{preview.src=e.target.result;}; reader.readAsDataURL(file);} else{preview.src="";}
+};
+
+// Add product
+window.addProduct = async () => {
+  const title=document.getElementById("title").value;
+  const price=document.getElementById("price").value;
+  const description=document.getElementById("description").value;
+  const category=document.getElementById("category").value;
+  const file=document.getElementById("image").files[0];
+  if(!file||!title||!price||!description||!category){ alert("Fill all fields"); return; }
+  const storageRef = ref(storage,"products/"+file.name);
+  await uploadBytes(storageRef,file);
+  const imageURL = await getDownloadURL(storageRef);
+  await addDoc(collection(db,"products"),{title,price,description,category,imageURL,sellerEmail:auth.currentUser.email,createdAt:new Date().toISOString()});
+  alert("Product added!");
+  document.getElementById("title").value="";
+  document.getElementById("price").value="";
+  document.getElementById("description").value="";
+  document.getElementById("category").value="";
+  document.getElementById("image").value="";
+  document.getElementById("imagePreview").src="";
+};
+
+// Display products (all users)
+const productsDiv=document.getElementById("products");
+const productsQuery=query(collection(db,"products"),orderBy("createdAt","desc"));
+const displayProducts = snapshot=>{
+  const filterCat=document.getElementById("filterCategory").value.toLowerCase();
+  const searchText=document.getElementById("searchInput").value.toLowerCase();
+  productsDiv.innerHTML="";
+  snapshot.forEach(docSnap=>{
+    const data=docSnap.data();
+    if((filterCat==="all"||data.category.toLowerCase()===filterCat)&&(data.title.toLowerCase().includes(searchText))){
+      productsDiv.innerHTML+=`
+      <div class="product">
+        <h3>${data.title} - Rs. ${data.price}</h3>
+        <p><strong>Category:</strong> ${data.category}</p>
+        <p>${data.description}</p>
+        <img src="${data.imageURL}" alt="${data.title}">
+        <p>Seller: ${data.sellerEmail}</p>
+        <button class="contactBtn" onclick="window.location='mailto:${data.sellerEmail}?subject=Interest in ${data.title}'">Contact Seller</button>
+      </div>`;
+    }
+  });
+};
+onSnapshot(productsQuery,snapshot=>displayProducts(snapshot));
+window.filterProducts=()=>{ onSnapshot(productsQuery,snapshot=>displayProducts(snapshot)); };
+window.searchProducts=()=>{ onSnapshot(productsQuery,snapshot=>displayProducts(snapshot)); };
+
+// Seller Dashboard
+const sellerDiv=document.getElementById("sellerProducts");
+const displaySellerProducts = snapshot=>{
+  sellerDiv.innerHTML="";
+  snapshot.forEach(docSnap=>{
+    const data=docSnap.data();
+    if(auth.currentUser && data.sellerEmail===auth.currentUser.email){
+      sellerDiv.innerHTML+=`
+      <div class="sellerProduct">
+        <h4>${data.title} - Rs. ${data.price}</h4>
+        <p>${data.description}</p>
+        <p><strong>Category:</strong> ${data.category}</p>
+        <img src="${data.imageURL}" style="max-width:100%;border-radius:4px;">
+        <button class="editBtn" onclick="editProduct('${docSnap.id}','${data.title}','${data.price}','${data.description}','${data.category}')">Edit</button>
+        <button class="deleteBtn" onclick="deleteProduct('${docSnap.id}')">Delete</button>
+      </div>`;
+    }
+  });
+};
+onSnapshot(productsQuery,snapshot=>displaySellerProducts(snapshot));
+
+window.deleteProduct=async(id)=>{ if(confirm("Delete this product?")){ await deleteDoc(doc(db,"products",id)); alert("Deleted"); } };
+window.editProduct=(id,title,price,description,category)=>{
+  document.getElementById("title").value=title;
+  document.getElementById("price").value=price;
+  document.getElementById("description").value=description;
+  document.getElementById("category").value=category;
+  window.deleteProduct(id);
+  alert("Edit fields above and click 'Add Product' to update.");
+};
+</script>
+</head>
+<body>
+<h1>Second-Hand Market</h1>
+
+<div id="auth">
+<input id="email" type="email" placeholder="Email">
+<input id="password" type="password" placeholder="Password">
+<button onclick="signup()">Signup</button>
+<button onclick="login()">Login</button>
+<button onclick="logout()">Logout</button>
+</div>
+
+<div id="productForm" style="display:none;">
+<h3>Add Product</h3>
+<input id="title" placeholder="Title">
+<input id="price" type="number" placeholder="Price">
+<textarea id="description" placeholder="Description"></textarea>
+<select id="category">
+<option value="">Select Category</option>
+<option>Electronics</option>
+<option>Clothes</option>
+<option>Books</option>
+<option>Home</option>
+<option>Other</option>
+</select>
+<input id="image" type="file" onchange="previewImage()">
+<img id="imagePreview" alt="Preview">
+<button onclick="addProduct()">Add Product</button>
+</div>
+
+<div id="filter">
+<input id="searchInput" placeholder="Search by title" oninput="searchProducts()">
+<select id="filterCategory" onchange="filterProducts()">
+<option value="all">All Categories</option>
+<option>Electronics</option>
+<option>Clothes</option>
+<option>Books</option>
+<option>Home</option>
+<option>Other</option>
+</select>
+</div>
+
+<h2>Available Products</h2>
+<div id="products"></div>
+
+<div id="sellerDashboard" style="display:none;">
+<h2>Seller Dashboard</h2>
+<div id="sellerProducts"></div>
+</div>
+</body>
+</html>
